@@ -1,44 +1,87 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
+
+function formatarDataExibicao(date) {
+  return date.toLocaleDateString("pt-AO");
+}
+
+function formatarDataISO(date) {
+  const ano = date.getFullYear();
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function formatarDataHora(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-AO")} ${d.toLocaleTimeString("pt-AO", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+const statusLabel = {
+  pendente: "Pendente",
+  sincronizado: "Sincronizada",
+};
 
 export default function ConsultarOcorrencias() {
   const [tipoBusca, setTipoBusca] = useState("data"); // data | local
-  const [valor, setValor] = useState("");
-  const [resultado, setResultado] = useState(null);
+  const [dataSelecionada, setDataSelecionada] = useState(new Date());
+  const [mostrarPicker, setMostrarPicker] = useState(false);
+  const [local, setLocal] = useState("");
 
-  function consultarOcorrencias() {
-    // 🔴 SIMULAÇÃO — depois ligar à API
-    if (valor.length > 0) {
-      setResultado([
-        {
-          id: 1,
-          tipo: "Acidente",
-          descricao: "Colisão entre dois veículos ligeiros",
-          data: "12/02/2025",
-          local: "Av. Revolução de Outubro",
-          agente: "Agente João",
-          estado: "Aberta",
-        },
-        {
-          id: 2,
-          tipo: "Infração",
-          descricao: "Excesso de velocidade",
-          data: "12/02/2025",
-          local: "Mutamba",
-          agente: "Agente Carlos",
-          estado: "Resolvida",
-        },
-      ]);
-    } else {
-      setResultado("erro");
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function consultarOcorrencias() {
+    setErro("");
+    setResultado(null);
+
+    if (tipoBusca === "local" && !local.trim()) {
+      setErro("Informe a localidade a pesquisar.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let response;
+      if (tipoBusca === "data") {
+        response = await api.post("/ocorrencias/buscar-por-data", {
+          data: formatarDataISO(dataSelecionada),
+        });
+      } else {
+        response = await api.post("/ocorrencias/buscar-por-local", {
+          local: local.trim(),
+        });
+      }
+
+      setResultado(response.data);
+    } catch (err) {
+      setErro(err.response?.data?.error || "Nenhuma ocorrência encontrada.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleChangeData(event, selecionada) {
+    setMostrarPicker(Platform.OS === "ios");
+    if (selecionada) {
+      setDataSelecionada(selecionada);
     }
   }
 
@@ -56,22 +99,24 @@ export default function ConsultarOcorrencias() {
       {/* SELETOR */}
       <View style={styles.switchBox}>
         <TouchableOpacity
-          style={[
-            styles.switchBtn,
-            tipoBusca === "data" && styles.switchActive,
-          ]}
-          onPress={() => setTipoBusca("data")}
+          style={[styles.switchBtn, tipoBusca === "data" && styles.switchActive]}
+          onPress={() => {
+            setTipoBusca("data");
+            setResultado(null);
+            setErro("");
+          }}
         >
           <MaterialIcons name="calendar-today" size={20} color="#fff" />
           <Text style={styles.switchText}>Data</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[
-            styles.switchBtn,
-            tipoBusca === "local" && styles.switchActive,
-          ]}
-          onPress={() => setTipoBusca("local")}
+          style={[styles.switchBtn, tipoBusca === "local" && styles.switchActive]}
+          onPress={() => {
+            setTipoBusca("local");
+            setResultado(null);
+            setErro("");
+          }}
         >
           <MaterialIcons name="location-on" size={20} color="#fff" />
           <Text style={styles.switchText}>Localidade</Text>
@@ -79,77 +124,115 @@ export default function ConsultarOcorrencias() {
       </View>
 
       {/* INPUT */}
-      <View style={styles.inputBox}>
-        <MaterialIcons
-          name={tipoBusca === "data" ? "event" : "place"}
-          size={22}
-          color="#777"
+      {tipoBusca === "data" ? (
+        <TouchableOpacity
+          style={styles.inputBox}
+          onPress={() => setMostrarPicker(true)}
+        >
+          <MaterialIcons name="event" size={22} color="#777" />
+          <Text style={styles.dateText}>
+            {formatarDataExibicao(dataSelecionada)}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.inputBox}>
+          <MaterialIcons name="place" size={22} color="#777" />
+          <TextInput
+            placeholder="Ex: Mutamba"
+            value={local}
+            onChangeText={setLocal}
+            style={styles.input}
+          />
+        </View>
+      )}
+
+      {mostrarPicker && (
+        <DateTimePicker
+          value={dataSelecionada}
+          mode="date"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={handleChangeData}
+          maximumDate={new Date()}
         />
-        <TextInput
-          placeholder={
-            tipoBusca === "data"
-              ? "Ex: 12/02/2025"
-              : "Ex: Mutamba"
-          }
-          value={valor}
-          onChangeText={setValor}
-          style={styles.input}
-        />
-      </View>
+      )}
 
       {/* BOTÃO */}
-      <TouchableOpacity style={styles.btn} onPress={consultarOcorrencias}>
-        <MaterialIcons name="search" size={22} color="#fff" />
-        <Text style={styles.btnText}>Consultar Ocorrências</Text>
+      <TouchableOpacity
+        style={styles.btn}
+        onPress={consultarOcorrencias}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <MaterialIcons name="search" size={22} color="#fff" />
+            <Text style={styles.btnText}>Consultar Ocorrências</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* RESULTADOS */}
+      {Array.isArray(resultado) && resultado.length === 0 && (
+        <View style={styles.errorBox}>
+          <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
+          <Text style={styles.errorText}>Nenhuma ocorrência encontrada</Text>
+        </View>
+      )}
+
       {Array.isArray(resultado) &&
         resultado.map((item) => (
-          <View key={item.id} style={styles.card}>
+          <View key={item.id_ocorrencia} style={styles.card}>
             <View style={styles.cardHeader}>
-              <MaterialIcons
-                name="warning"
-                size={22}
-                color="#ff9800"
-              />
-              <Text style={styles.cardTitle}>{item.tipo}</Text>
+              <MaterialIcons name="warning" size={22} color="#ff9800" />
+              <Text style={styles.cardTitle}>
+                {item.tipo?.charAt(0).toUpperCase() + item.tipo?.slice(1)}
+              </Text>
             </View>
 
             <Text style={styles.text}>
-              Descrição:{" "}
-              <Text style={styles.bold}>{item.descricao}</Text>
+              Descrição: <Text style={styles.bold}>{item.descricao || "—"}</Text>
             </Text>
             <Text style={styles.text}>
-              Data: <Text style={styles.bold}>{item.data}</Text>
+              Data: <Text style={styles.bold}>{formatarDataHora(item.data_hora)}</Text>
             </Text>
             <Text style={styles.text}>
-              Local: <Text style={styles.bold}>{item.local}</Text>
+              Local: <Text style={styles.bold}>{item.localizacao}</Text>
             </Text>
             <Text style={styles.text}>
-              Agente: <Text style={styles.bold}>{item.agente}</Text>
+              Agente: <Text style={styles.bold}>{item.agente?.nome || "—"}</Text>
             </Text>
+            {item.condutor && (
+              <Text style={styles.text}>
+                Condutor: <Text style={styles.bold}>{item.condutor.nome}</Text>
+              </Text>
+            )}
+            {item.veiculo && (
+              <Text style={styles.text}>
+                Veículo: <Text style={styles.bold}>{item.veiculo.matricula}</Text>
+              </Text>
+            )}
 
             <View
               style={[
                 styles.status,
-                item.estado === "Aberta"
-                  ? styles.open
-                  : styles.closed,
+                item.status_sincronizacao === "sincronizado"
+                  ? styles.closed
+                  : styles.open,
               ]}
             >
-              <Text style={styles.statusText}>{item.estado}</Text>
+              <Text style={styles.statusText}>
+                {statusLabel[item.status_sincronizacao] || item.status_sincronizacao}
+              </Text>
             </View>
           </View>
         ))}
 
       {/* ERRO */}
-      {resultado === "erro" && (
+      {erro && (
         <View style={styles.errorBox}>
           <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
-          <Text style={styles.errorText}>
-            Nenhuma ocorrência encontrada
-          </Text>
+          <Text style={styles.errorText}>{erro}</Text>
         </View>
       )}
     </ScrollView>
@@ -214,6 +297,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     marginLeft: 10,
+  },
+  dateText: {
+    flex: 1,
+    fontSize: 16,
+    marginLeft: 10,
+    color: "#222",
   },
 
   btn: {
@@ -281,10 +370,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffeaea",
     padding: 14,
     borderRadius: 14,
+    marginBottom: 20,
   },
   errorText: {
     color: "#ff3b30",
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
 });

@@ -10,7 +10,7 @@ import {
   View
 } from "react-native";
 
-export default function PasswordReset({ navigation }) {
+export default function PasswordReset() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -21,7 +21,6 @@ export default function PasswordReset({ navigation }) {
   function sendEmail() {
     if (!email.includes("@")) return;
 
-    setSent(true);
     setTimeout(() => {
       setSent(false);
       navigation.goBack();
@@ -33,7 +32,7 @@ export default function PasswordReset({ navigation }) {
       <View style={[styles.card, isDark && styles.cardDark]}>
         
         {/* BOTÃO VOLTAR */}
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <MaterialIcons 
             name="arrow-back" 
             size={26} 

@@ -1,35 +1,95 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
+import { abrirDocumentoExterno, buscarDocumento } from "../utils/documentUtils";
+
+// "Válida" ou "Expirada", calculado a partir de data_validade_carta
+function calcularEstado(dataValidade) {
+  if (!dataValidade) return null;
+  const hoje = new Date();
+  const validade = new Date(dataValidade);
+  return validade >= hoje ? "Válida" : "Expirada";
+}
+
+function formatarData(iso) {
+  if (!iso) return "—";
+  return String(iso).split("T")[0];
+}
 
 export default function ConsultarCarta() {
   const [numeroCarta, setNumeroCarta] = useState("");
   const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function consultarCarta() {
-    // 🔴 SIMULAÇÃO — depois liga à API real
-    if (numeroCarta === "CC-987654-AN") {
-      setResultado({
-        nome: "Carlos Manuel Silva",
-        categoria: "B",
-        emissao: "15/08/2018",
-        validade: "15/08/2028",
-        estado: "Válida",
-        cartaImagem:
-          "https://via.placeholder.com/350x220.png?text=Carta+de+Condução",
+  const [imagemBase64, setImagemBase64] = useState(null);
+  const [carregandoImagem, setCarregandoImagem] = useState(false);
+  const [documentoPdf, setDocumentoPdf] = useState(null);
+
+  async function consultarCarta() {
+    setErro("");
+    setResultado(null);
+    setImagemBase64(null);
+    setDocumentoPdf(null);
+
+    if (!numeroCarta.trim()) {
+      setErro("Informe o número da carta de condução.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.post("/condutores/buscar-por-carta", {
+        num_carta: numeroCarta.trim(),
       });
-    } else {
-      setResultado("erro");
+      setResultado(response.data);
+
+      if (response.data.tem_file_carta) {
+        carregarImagemCarta(numeroCarta.trim());
+      }
+    } catch (err) {
+      setErro(err.response?.data?.error || "Carta de Condução não encontrada.");
+    } finally {
+      setLoading(false);
     }
   }
+
+  async function carregarImagemCarta(numCartaConsultada) {
+    setCarregandoImagem(true);
+    try {
+      const { contentType, base64 } = await buscarDocumento(
+        "/condutores/consultar-carta",
+        { num_carta: numCartaConsultada }
+      );
+
+      if (contentType.includes("pdf")) {
+        setDocumentoPdf({ base64, contentType });
+      } else {
+        setImagemBase64(`data:${contentType};base64,${base64}`);
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar imagem da carta:", err.message);
+    } finally {
+      setCarregandoImagem(false);
+    }
+  }
+
+  async function handleAbrirPdf() {
+    if (!documentoPdf) return;
+    await abrirDocumentoExterno(documentoPdf.base64, documentoPdf.contentType, "carta");
+  }
+
+  const estado = resultado ? calcularEstado(resultado.data_validade_carta) : null;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -55,13 +115,19 @@ export default function ConsultarCarta() {
       </View>
 
       {/* BOTÃO */}
-      <TouchableOpacity style={styles.btn} onPress={consultarCarta}>
-        <MaterialIcons name="search" size={22} color="#fff" />
-        <Text style={styles.btnText}>Consultar Carta</Text>
+      <TouchableOpacity style={styles.btn} onPress={consultarCarta} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <MaterialIcons name="search" size={22} color="#fff" />
+            <Text style={styles.btnText}>Consultar Carta</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* RESULTADO */}
-      {resultado && resultado !== "erro" && (
+      {resultado && (
         <View style={styles.resultBox}>
           <Text style={styles.resultTitle}>Dados do Condutor</Text>
 
@@ -70,16 +136,14 @@ export default function ConsultarCarta() {
           </Text>
 
           <Text style={styles.label}>
-            Categoria:{" "}
-            <Text style={styles.value}>{resultado.categoria}</Text>
+            Nº da Carta: <Text style={styles.value}>{resultado.num_carta}</Text>
           </Text>
 
           <Text style={styles.label}>
-            Emissão: <Text style={styles.value}>{resultado.emissao}</Text>
-          </Text>
-
-          <Text style={styles.label}>
-            Validade: <Text style={styles.value}>{resultado.validade}</Text>
+            Validade:{" "}
+            <Text style={styles.value}>
+              {formatarData(resultado.data_validade_carta)}
+            </Text>
           </Text>
 
           <Text style={styles.label}>
@@ -87,35 +151,58 @@ export default function ConsultarCarta() {
             <Text
               style={[
                 styles.value,
-                resultado.estado === "Válida"
-                  ? styles.ok
-                  : styles.expirada,
+                estado === "Válida" ? styles.ok : styles.expirada,
               ]}
             >
-              {resultado.estado}
+              {estado}
             </Text>
           </Text>
 
-          {/* IMAGEM / PDF */}
-          <Image
-            source={{ uri: resultado.cartaImagem }}
-            style={styles.cartaImage}
-            resizeMode="contain"
-          />
-
-          <Text style={styles.previewText}>
-            Visualização da Carta de Condução
+          <Text style={styles.label}>
+            Telefone: <Text style={styles.value}>{resultado.telefone}</Text>
           </Text>
+
+          {/* IMAGEM */}
+          {carregandoImagem && (
+            <View style={styles.previewLoading}>
+              <ActivityIndicator color="#4a6bff" />
+              <Text style={styles.previewText}>Carregando imagem...</Text>
+            </View>
+          )}
+
+          {imagemBase64 && (
+            <>
+              <Image
+                source={{ uri: imagemBase64 }}
+                style={styles.cartaImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.previewText}>
+                Visualização da Carta de Condução
+              </Text>
+            </>
+          )}
+
+          {documentoPdf && (
+            <TouchableOpacity style={styles.pdfBtn} onPress={handleAbrirPdf}>
+              <MaterialIcons name="picture-as-pdf" size={20} color="#4a6bff" />
+              <Text style={styles.pdfBtnText}>Abrir arquivo da carta</Text>
+            </TouchableOpacity>
+          )}
+
+          {!resultado.tem_file_carta && (
+            <Text style={styles.previewText}>
+              Nenhum arquivo de carta cadastrado para este condutor.
+            </Text>
+          )}
         </View>
       )}
 
       {/* ERRO */}
-      {resultado === "erro" && (
+      {erro && (
         <View style={styles.errorBox}>
           <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
-          <Text style={styles.errorText}>
-            Carta de Condução não encontrada
-          </Text>
+          <Text style={styles.errorText}>{erro}</Text>
         </View>
       )}
     </ScrollView>
@@ -182,6 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 18,
     elevation: 2,
+    marginBottom: 20,
   },
   resultTitle: {
     fontSize: 18,
@@ -219,6 +307,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#777",
   },
+  previewLoading: {
+    alignItems: "center",
+    marginTop: 16,
+  },
+
+  pdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eef2ff",
+    padding: 14,
+    borderRadius: 14,
+    marginTop: 16,
+  },
+  pdfBtnText: {
+    color: "#4a6bff",
+    fontWeight: "700",
+    marginLeft: 8,
+  },
 
   errorBox: {
     flexDirection: "row",
@@ -226,10 +333,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffeaea",
     padding: 14,
     borderRadius: 14,
+    marginBottom: 20,
   },
   errorText: {
     color: "#ff3b30",
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
 });

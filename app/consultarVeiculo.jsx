@@ -1,37 +1,79 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
+import { abrirDocumentoExterno, buscarDocumento } from "../utils/documentUtils";
 
 export default function ConsultarVeiculo() {
   const [matricula, setMatricula] = useState("");
   const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function consultarVeiculo() {
-    // 🔴 SIMULAÇÃO — depois liga à API real
-    if (matricula === "LD-45-89-AA") {
-      setResultado({
-        proprietario: "Carlos Manuel Silva",
-        marca: "Toyota",
-        modelo: "Corolla",
-        cor: "Cinza",
-        ano: "2020",
-        seguro: "Válido",
-        inspeccao: "Válida",
-        apreendido: "Não",
-        imagem:
-          "https://via.placeholder.com/350x220.png?text=Veículo+Registrado",
-      });
-    } else {
-      setResultado("erro");
+  const [imagemBase64, setImagemBase64] = useState(null);
+  const [carregandoImagem, setCarregandoImagem] = useState(false);
+  const [documentoPdf, setDocumentoPdf] = useState(null);
+
+  async function consultarVeiculo() {
+    setErro("");
+    setResultado(null);
+    setImagemBase64(null);
+    setDocumentoPdf(null);
+
+    if (!matricula.trim()) {
+      setErro("Informe a matrícula do veículo.");
+      return;
     }
+
+    setLoading(true);
+    try {
+      const response = await api.post("/veiculos/buscar-por-matricula", {
+        matricula: matricula.trim(),
+      });
+      setResultado(response.data);
+
+      if (response.data.tem_file_livrete) {
+        carregarImagemLivrete(matricula.trim());
+      }
+    } catch (err) {
+      setErro(err.response?.data?.error || "Veículo não encontrado no sistema.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function carregarImagemLivrete(matriculaConsultada) {
+    setCarregandoImagem(true);
+    try {
+      const { contentType, base64 } = await buscarDocumento(
+        "/veiculos/consultar-veiculo",
+        { matricula: matriculaConsultada }
+      );
+
+      if (contentType.includes("pdf")) {
+        setDocumentoPdf({ base64, contentType });
+      } else {
+        setImagemBase64(`data:${contentType};base64,${base64}`);
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar imagem do livrete:", err.message);
+    } finally {
+      setCarregandoImagem(false);
+    }
+  }
+
+  async function handleAbrirPdf() {
+    if (!documentoPdf) return;
+    await abrirDocumentoExterno(documentoPdf.base64, documentoPdf.contentType, "livrete");
   }
 
   return (
@@ -58,19 +100,25 @@ export default function ConsultarVeiculo() {
       </View>
 
       {/* BOTÃO */}
-      <TouchableOpacity style={styles.btn} onPress={consultarVeiculo}>
-        <MaterialIcons name="search" size={22} color="#fff" />
-        <Text style={styles.btnText}>Consultar Veículo</Text>
+      <TouchableOpacity style={styles.btn} onPress={consultarVeiculo} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <MaterialIcons name="search" size={22} color="#fff" />
+            <Text style={styles.btnText}>Consultar Veículo</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* RESULTADO */}
-      {resultado && resultado !== "erro" && (
+      {resultado && (
         <View style={styles.resultBox}>
           <Text style={styles.resultTitle}>Dados do Veículo</Text>
 
           <Text style={styles.label}>
             Proprietário:{" "}
-            <Text style={styles.value}>{resultado.proprietario}</Text>
+            <Text style={styles.value}>{resultado.proprietario || "—"}</Text>
           </Text>
 
           <Text style={styles.label}>
@@ -86,71 +134,57 @@ export default function ConsultarVeiculo() {
           </Text>
 
           <Text style={styles.label}>
-            Ano: <Text style={styles.value}>{resultado.ano}</Text>
+            Nº do Livrete: <Text style={styles.value}>{resultado.num_livrete}</Text>
           </Text>
 
-          <Text style={styles.label}>
-            Seguro:{" "}
-            <Text
-              style={[
-                styles.value,
-                resultado.seguro === "Válido"
-                  ? styles.ok
-                  : styles.error,
-              ]}
-            >
-              {resultado.seguro}
+          {resultado.proprietario_telefone && (
+            <Text style={styles.label}>
+              Telefone do proprietário:{" "}
+              <Text style={styles.value}>{resultado.proprietario_telefone}</Text>
             </Text>
-          </Text>
-
-          <Text style={styles.label}>
-            Inspeção:{" "}
-            <Text
-              style={[
-                styles.value,
-                resultado.inspeccao === "Válida"
-                  ? styles.ok
-                  : styles.error,
-              ]}
-            >
-              {resultado.inspeccao}
-            </Text>
-          </Text>
-
-          <Text style={styles.label}>
-            Apreendido:{" "}
-            <Text
-              style={[
-                styles.value,
-                resultado.apreendido === "Não"
-                  ? styles.ok
-                  : styles.error,
-              ]}
-            >
-              {resultado.apreendido}
-            </Text>
-          </Text>
+          )}
 
           {/* IMAGEM */}
-          <Image
-            source={{ uri: resultado.imagem }}
-            style={styles.veiculoImage}
-            resizeMode="contain"
-          />
+          {carregandoImagem && (
+            <View style={styles.previewLoading}>
+              <ActivityIndicator color="#4a6bff" />
+              <Text style={styles.previewText}>Carregando imagem...</Text>
+            </View>
+          )}
 
-          <Text style={styles.previewText}>
-            Visualização do veículo / documento
-          </Text>
+          {imagemBase64 && (
+            <>
+              <Image
+                source={{ uri: imagemBase64 }}
+                style={styles.veiculoImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.previewText}>
+                Visualização do livrete do veículo
+              </Text>
+            </>
+          )}
+
+          {documentoPdf && (
+            <TouchableOpacity style={styles.pdfBtn} onPress={handleAbrirPdf}>
+              <MaterialIcons name="picture-as-pdf" size={20} color="#4a6bff" />
+              <Text style={styles.pdfBtnText}>Abrir arquivo do livrete</Text>
+            </TouchableOpacity>
+          )}
+
+          {!resultado.tem_file_livrete && (
+            <Text style={styles.previewText}>
+              Nenhum arquivo de livrete cadastrado para este veículo.
+            </Text>
+          )}
         </View>
       )}
 
       {/* ERRO */}
-      {resultado === "erro" && (
+      {erro && (
         <View style={styles.errorBox}>
           <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
-          <Text style={styles.errorText}>
-            Veículo não encontrado no sistema
-          </Text>
+          <Text style={styles.errorText}>{erro}</Text>
         </View>
       )}
     </ScrollView>
@@ -217,6 +251,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 18,
     elevation: 2,
+    marginBottom: 20,
   },
   resultTitle: {
     fontSize: 18,
@@ -234,13 +269,6 @@ const styles = StyleSheet.create({
     color: "#000",
   },
 
-  ok: {
-    color: "#0a7d14",
-  },
-  error: {
-    color: "#ff3b30",
-  },
-
   veiculoImage: {
     width: "100%",
     height: 220,
@@ -254,6 +282,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#777",
   },
+  previewLoading: {
+    alignItems: "center",
+    marginTop: 16,
+  },
+
+  pdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eef2ff",
+    padding: 14,
+    borderRadius: 14,
+    marginTop: 16,
+  },
+  pdfBtnText: {
+    color: "#4a6bff",
+    fontWeight: "700",
+    marginLeft: 8,
+  },
 
   errorBox: {
     flexDirection: "row",
@@ -261,10 +308,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffeaea",
     padding: 14,
     borderRadius: 14,
+    marginBottom: 20,
   },
   errorText: {
     color: "#ff3b30",
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
 });

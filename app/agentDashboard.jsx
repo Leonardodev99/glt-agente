@@ -1,54 +1,20 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { BarChart, LineChart } from "react-native-chart-kit";
+import { BarChart } from "react-native-chart-kit";
+import api from "../services/api";
 
-/* ================== DADOS ================== */
-const multas = [
-  { label: "Seg", value: 2 },
-  { label: "Ter", value: 1 },
-  { label: "Qua", value: 3 },
-  { label: "Qui", value: 0 },
-  { label: "Sex", value: 4 },
-];
-
-const ocorrencias = [
-  { label: "Centro", value: 5 },
-  { label: "Talatona", value: 3 },
-  { label: "Viana", value: 4 },
-  { label: "Cacuaco", value: 2 },
-];
-
-const totalApreensoes = 12;
-
-/* ================== GRÁFICOS (DATASETS REAIS) ================== */
 const screenWidth = Dimensions.get("window").width - 40;
-
-const multasChartData = {
-  labels: multas.map((item) => item.label),
-  datasets: [
-    {
-      data: multas.map((item) => item.value),
-    },
-  ],
-};
-
-const ocorrenciasChartData = {
-  labels: ocorrencias.map((item) => item.label),
-  datasets: [
-    {
-      data: ocorrencias.map((item) => item.value),
-      strokeWidth: 3,
-    },
-  ],
-};
 
 const chartConfig = {
   backgroundGradientFrom: "#ffffff",
@@ -63,17 +29,91 @@ const chartConfig = {
   },
 };
 
-/* ================== DASHBOARD ================== */
+const chartConfigLaranja = {
+  ...chartConfig,
+  color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
+};
+
 export default function AgentDashboard() {
+  const [nomeAgente, setNomeAgente] = useState("");
+  const [consultasHoje, setConsultasHoje] = useState(0);
+  const [multasHoje, setMultasHoje] = useState(0);
+  const [multasPorDia, setMultasPorDia] = useState([]);
+  const [ocorrenciasPorLocalidade, setOcorrenciasPorLocalidade] = useState([]);
+  const [apreensoesTotal, setApreensoesTotal] = useState(0);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [erro, setErro] = useState("");
+
+  async function carregarDados() {
+    setErro("");
+    try {
+      const [perfilRes, consultasRes, dashboardRes] = await Promise.all([
+        api.get("/agentes/ver-perfil"),
+        api.get("/consultas/resumo-hoje"),
+        api.get("/ocorrencias/dashboard-agente"),
+      ]);
+
+      setNomeAgente(perfilRes.data.nome);
+      setConsultasHoje(consultasRes.data.total_hoje);
+      setMultasHoje(dashboardRes.data.multas_hoje);
+      setMultasPorDia(dashboardRes.data.multas_por_dia);
+      setOcorrenciasPorLocalidade(dashboardRes.data.ocorrencias_por_localidade);
+      setApreensoesTotal(dashboardRes.data.apreensoes_total);
+    } catch (err) {
+      setErro(err.response?.data?.error || "Erro ao carregar dados do dashboard.");
+    }
+  }
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      await carregarDados();
+      setLoading(false);
+    })();
+  }, []);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await carregarDados();
+    setRefreshing(false);
+  }
+
+  const multasChartData = {
+    labels: multasPorDia.map((item) => item.dia),
+    datasets: [{ data: multasPorDia.map((item) => item.total) }],
+  };
+
+  const localidadesChartData = {
+    labels: ocorrenciasPorLocalidade.map((item) =>
+      item.local.length > 8 ? `${item.local.slice(0, 8)}…` : item.local
+    ),
+    datasets: [{ data: ocorrenciasPorLocalidade.map((item) => item.total) }],
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4a6bff" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* HEADER */}
         <View style={styles.headerCard}>
           <View style={styles.headerRow}>
             <View>
               <Text style={styles.welcome}>Bem-vindo</Text>
-              <Text style={styles.name}>Agente João</Text>
+              <Text style={styles.name}>{nomeAgente || "Agente"}</Text>
               <Text style={styles.subtitle}>
                 Sistema Integrado de Trânsito
               </Text>
@@ -85,6 +125,8 @@ export default function AgentDashboard() {
           </View>
         </View>
 
+        {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
+
         {/* RESUMO */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Resumo do dia</Text>
@@ -92,14 +134,14 @@ export default function AgentDashboard() {
           <View style={styles.cardsRow}>
             <SummaryCard
               icon="search"
-              label="Consultas"
-              value="12"
+              label="Consultas hoje"
+              value={String(consultasHoje)}
               color="#4a6bff"
             />
             <SummaryCard
               icon="receipt-long"
-              label="Multas"
-              value="3"
+              label="Multas hoje"
+              value={String(multasHoje)}
               color="#ff9800"
             />
           </View>
@@ -107,48 +149,46 @@ export default function AgentDashboard() {
 
         {/* INDICADORES */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Indicadores</Text>
+          <Text style={styles.sectionTitle}>Indicadores (últimos 7 dias)</Text>
 
           <Text style={styles.chartTitle}>Multas por dia</Text>
-          <BarChart
-            data={multasChartData}
-            width={screenWidth}
-            height={220}
-            fromZero
-            chartConfig={chartConfig}
-            style={styles.chart}
-          />
+          {multasPorDia.length > 0 ? (
+            <BarChart
+              data={multasChartData}
+              width={screenWidth}
+              height={220}
+              fromZero
+              chartConfig={chartConfig}
+              style={styles.chart}
+            />
+          ) : (
+            <Text style={styles.semDados}>Sem multas neste período.</Text>
+          )}
 
           <Text style={styles.chartTitle}>Ocorrências por localidade</Text>
-          <LineChart
-            data={ocorrenciasChartData}
-            width={screenWidth}
-            height={220}
-            fromZero
-            bezier
-            chartConfig={chartConfig}
-            style={styles.chart}
-          />
+          {ocorrenciasPorLocalidade.length > 0 ? (
+            <BarChart
+              data={localidadesChartData}
+              width={screenWidth}
+              height={220}
+              fromZero
+              chartConfig={chartConfigLaranja}
+              style={styles.chart}
+              verticalLabelRotation={20}
+            />
+          ) : (
+            <Text style={styles.semDados}>Sem ocorrências neste período.</Text>
+          )}
 
-          <Text style={styles.chartTitle}>Apreensões</Text>
-          <ProgressChart
-            label="Motorizadas"
-            value={6}
-            total={totalApreensoes}
-            color="#4a6bff"
-          />
-          <ProgressChart
-            label="Ligeiros"
-            value={4}
-            total={totalApreensoes}
-            color="#ff9800"
-          />
-          <ProgressChart
-            label="Pesados"
-            value={2}
-            total={totalApreensoes}
-            color="#f44336"
-          />
+          <View style={styles.apreensoesCard}>
+            <MaterialIcons name="local-police" size={28} color="#4a6bff" />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={styles.apreensoesValor}>{apreensoesTotal}</Text>
+              <Text style={styles.apreensoesLabel}>
+                Apreensões registadas (últimos 7 dias)
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* CONSULTAS */}
@@ -175,11 +215,7 @@ export default function AgentDashboard() {
             label="Multas"
             onPress={() => router.push("/consultarMultas")}
           />
-          <MenuItem
-            icon="car-crash"
-            label="Apreensões"
-            onPress={() => router.push("/consultarApreensoes")}
-          />
+
           <MenuItem
             icon="report"
             label="Ocorrências"
@@ -235,37 +271,22 @@ function MenuItem({ icon, label, onPress }) {
   );
 }
 
-function ProgressChart({ label, value, total, color }) {
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={styles.progressLabel}>
-        {label} ({value})
-      </Text>
-      <View style={styles.progressBarBg}>
-        <View
-          style={[
-            styles.progressBar,
-            {
-              width: `${(value / total) * 100}%`,
-              backgroundColor: color,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
 /* ================== STYLES ================== */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f6ff", padding: 20 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4f6ff",
+  },
 
   headerCard: {
     backgroundColor: "#4a6bff",
     borderRadius: 22,
     padding: 20,
-    marginBottom: 30,
+    marginBottom: 20,
   },
   headerRow: {
     flexDirection: "row",
@@ -282,6 +303,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#3a57e8",
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  erroText: {
+    color: "#ff3b30",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
   },
 
   section: { marginBottom: 30 },
@@ -301,14 +330,22 @@ const styles = StyleSheet.create({
 
   chartTitle: { fontSize: 15, fontWeight: "700", marginBottom: 10 },
   chart: { borderRadius: 18, marginBottom: 25 },
-
-  progressLabel: { fontSize: 13, fontWeight: "700" },
-  progressBarBg: {
-    height: 10,
-    backgroundColor: "#eee",
-    borderRadius: 6,
+  semDados: {
+    color: "#999",
+    fontSize: 13,
+    marginBottom: 25,
+    fontStyle: "italic",
   },
-  progressBar: { height: "100%", borderRadius: 6 },
+
+  apreensoesCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 18,
+    borderRadius: 18,
+  },
+  apreensoesValor: { fontSize: 24, fontWeight: "800" },
+  apreensoesLabel: { color: "#777", fontSize: 13 },
 
   menuItem: {
     backgroundColor: "#fff",

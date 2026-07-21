@@ -1,7 +1,9 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   StyleSheet,
   Text,
@@ -10,6 +12,7 @@ import {
   View,
   useColorScheme,
 } from "react-native";
+import api from "../services/api";
 
 export default function Login() {
   const scheme = useColorScheme();
@@ -22,6 +25,8 @@ export default function Login() {
   const [senha, setSenha] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
 
   const emailValido = /\S+@\S+\.\S+/.test(email);
   const senhaValida = senha.length >= 4;
@@ -44,6 +49,33 @@ export default function Login() {
       }),
     ]).start();
   }, []);
+
+  async function handleLogin() {
+    setErro("");
+    setLoading(true);
+
+    try {
+      const response = await api.post("/tokens", { email, senha });
+      const { user, token } = response.data;
+
+      // Este app é só para agentes em campo — bloqueia login de admin aqui
+      if (user.type !== "agente") {
+        setErro("Esta conta não tem acesso ao app do agente.");
+        return;
+      }
+
+      await AsyncStorage.setItem("token", token);
+      await AsyncStorage.setItem("user", JSON.stringify(user));
+
+      router.push("/agentDashboard");
+    } catch (err) {
+      const mensagem =
+        err.response?.data?.error || "Erro ao entrar. Verifique sua conexão.";
+      setErro(mensagem);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -141,27 +173,33 @@ export default function Login() {
           </TouchableOpacity>
         </View>
 
-        {/* ESQUECI A SENHA */}
-        <TouchableOpacity 
-            style={styles.forgotBtn}
-            onPress={() => router.push("/passwordReset")}
-            >
-            <Text style={[styles.forgotText, isDark && styles.textDark]}>
-                Esqueci minha senha
-            </Text>
-        </TouchableOpacity>
+        {/* MENSAGEM DE ERRO */}
+        {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
 
+        {/* ESQUECI A SENHA */}
+        <TouchableOpacity
+          style={styles.forgotBtn}
+          onPress={() => router.push("/passwordReset")}
+        >
+          <Text style={[styles.forgotText, isDark && styles.textDark]}>
+            Esqueci minha senha
+          </Text>
+        </TouchableOpacity>
 
         {/* BOTÃO ACESSAR */}
         <TouchableOpacity
           style={[
             styles.btn,
-            !(emailValido && senhaValida) && styles.btnDisabled,
+            (!(emailValido && senhaValida) || loading) && styles.btnDisabled,
           ]}
-          disabled={!(emailValido && senhaValida)}
-          onPress={() => router.push("/agentDashboard")}
+          disabled={!(emailValido && senhaValida) || loading}
+          onPress={handleLogin}
         >
-          <Text style={styles.btnText}>Acessar</Text>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>Acessar</Text>
+          )}
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -248,6 +286,14 @@ const styles = StyleSheet.create({
   },
   textDark: {
     color: "#fff",
+  },
+
+  erroText: {
+    color: "#ff3b30",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
   },
 
   forgotBtn: {

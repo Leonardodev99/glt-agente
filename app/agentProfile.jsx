@@ -1,55 +1,245 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-
+import { useEffect, useState } from "react";
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
 
-/* ================== DADOS DO AGENTE ================== */
-const agente = {
-  nome: "João Manuel",
-  telefone: "+244 923 456 789",
-  email: "joao.manuel@transito.gov.ao",
-  foto: "https://i.pravatar.cc/300", // imagem exemplo
-};
-
-/* ================== TELA PERFIL ================== */
 export default function AgentProfile() {
+  const [perfil, setPerfil] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+
+  // Edição de email
+  const [editandoEmail, setEditandoEmail] = useState(false);
+  const [emailForm, setEmailForm] = useState("");
+  const [salvandoEmail, setSalvandoEmail] = useState(false);
+
+  // Troca de senha
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
+
+  const fetchPerfil = async () => {
+    setLoading(true);
+    setErro("");
+    try {
+      const response = await api.get("/agentes/ver-perfil");
+      setPerfil(response.data);
+      setEmailForm(response.data.email);
+    } catch (err) {
+      setErro(err.response?.data?.error || "Erro ao carregar perfil.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPerfil();
+  }, []);
+
+  async function handleSalvarEmail() {
+    setErro("");
+    setSucesso("");
+    setSalvandoEmail(true);
+    try {
+      const response = await api.put("/agentes/perfil-update", {
+        email: emailForm,
+      });
+      setPerfil(response.data);
+      setEditandoEmail(false);
+      setSucesso("E-mail atualizado com sucesso.");
+    } catch (err) {
+      const data = err.response?.data;
+      setErro(data?.errors ? data.errors.join(" | ") : data?.error || "Erro ao atualizar e-mail.");
+    } finally {
+      setSalvandoEmail(false);
+    }
+  }
+
+  async function handleAlterarSenha() {
+    setErro("");
+    setSucesso("");
+
+    if (!senhaAtual || !novaSenha || !confirmarSenha) {
+      setErro("Preencha todos os campos de senha.");
+      return;
+    }
+    if (novaSenha.length < 6) {
+      setErro("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (novaSenha !== confirmarSenha) {
+      setErro("As senhas não coincidem.");
+      return;
+    }
+
+    setSalvandoSenha(true);
+    try {
+      await api.put("/agentes/perfil-update", {
+        senha: novaSenha,
+        senha_atual: senhaAtual,
+      });
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmarSenha("");
+      setSucesso("Senha alterada com sucesso.");
+    } catch (err) {
+      const data = err.response?.data;
+      setErro(data?.errors ? data.errors.join(" | ") : data?.error || "Erro ao alterar senha.");
+    } finally {
+      setSalvandoSenha(false);
+    }
+  }
+
+  async function handleLogout() {
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("user");
+    router.push("/login");
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4a6bff" />
+      </View>
+    );
+  }
+
+  if (!perfil) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.erroText}>{erro || "Não foi possível carregar o perfil."}</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* FOTO */}
+      {/* AVATAR GENÉRICO (sem foto real no sistema ainda) */}
       <View style={styles.avatarContainer}>
-        <Image source={{ uri: agente.foto }} style={styles.avatar} />
+        <MaterialIcons name="account-circle" size={120} color="#4a6bff" />
       </View>
 
       {/* NOME */}
-      <Text style={styles.name}>{agente.nome}</Text>
-      <Text style={styles.role}>Agente de Trânsito</Text>
+      <Text style={styles.name}>{perfil.nome}</Text>
+      <Text style={styles.role}>
+        Agente de Trânsito · {perfil.status === "ativo" ? "Ativo" : "Inativo"}
+      </Text>
+
+      {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
+      {sucesso ? <Text style={styles.sucessoText}>{sucesso}</Text> : null}
 
       {/* INFORMAÇÕES */}
       <View style={styles.infoCard}>
-        <InfoItem icon="phone" label="Telefone" value={agente.telefone} />
-        <InfoItem icon="email" label="E-mail" value={agente.email} />
+        <InfoItem icon="badge" label="NIP" value={perfil.nip} />
+
+        {!editandoEmail ? (
+          <View style={styles.infoItem}>
+            <View style={styles.iconBox}>
+              <MaterialIcons name="email" size={22} color="#4a6bff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoLabel}>E-mail</Text>
+              <Text style={styles.infoValue}>{perfil.email}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setEditandoEmail(true)}>
+              <MaterialIcons name="edit" size={20} color="#777" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.editEmailBox}>
+            <TextInput
+              style={styles.input}
+              value={emailForm}
+              onChangeText={setEmailForm}
+              placeholder="Novo e-mail"
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                style={[styles.smallBtn, styles.smallBtnPrimary]}
+                onPress={handleSalvarEmail}
+                disabled={salvandoEmail}
+              >
+                {salvandoEmail ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.smallBtnText}>Salvar</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.smallBtn, styles.smallBtnSecondary]}
+                onPress={() => {
+                  setEmailForm(perfil.email);
+                  setEditandoEmail(false);
+                }}
+              >
+                <Text style={styles.smallBtnTextSecondary}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* BOTÃO */}
-      <TouchableOpacity 
-        style={styles.logoutBtn}
-        onPress={() => router.push("/login")}
-         >
+      {/* TROCA DE SENHA */}
+      <View style={styles.infoCard}>
+        <Text style={styles.sectionTitle}>Segurança</Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Senha atual"
+          secureTextEntry
+          value={senhaAtual}
+          onChangeText={setSenhaAtual}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Nova senha"
+          secureTextEntry
+          value={novaSenha}
+          onChangeText={setNovaSenha}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Confirmar nova senha"
+          secureTextEntry
+          value={confirmarSenha}
+          onChangeText={setConfirmarSenha}
+        />
+
+        <TouchableOpacity
+          style={[styles.smallBtn, styles.smallBtnPrimary, { alignSelf: "stretch", marginTop: 8 }]}
+          onPress={handleAlterarSenha}
+          disabled={salvandoSenha}
+        >
+          {salvandoSenha ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.smallBtnText}>Alterar senha</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* BOTÃO LOGOUT */}
+      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <MaterialIcons name="logout" size={22} color="#fff" />
         <Text style={styles.logoutText}>Terminar Sessão</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
-
-/* ================== COMPONENTES ================== */
 
 function InfoItem({ icon, label, value }) {
   return (
@@ -65,8 +255,6 @@ function InfoItem({ icon, label, value }) {
   );
 }
 
-/* ================== STYLES ================== */
-
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -74,19 +262,16 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
   },
-
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4f6ff",
+  },
   avatarContainer: {
     marginTop: 30,
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: "#4a6bff",
-  },
-
   name: {
     fontSize: 24,
     fontWeight: "800",
@@ -95,17 +280,35 @@ const styles = StyleSheet.create({
   role: {
     fontSize: 14,
     color: "#777",
-    marginBottom: 30,
+    marginBottom: 20,
   },
-
+  erroText: {
+    color: "#f44336",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  sucessoText: {
+    color: "#0a7d14",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
+  },
   infoCard: {
     width: "100%",
     backgroundColor: "#fff",
     borderRadius: 20,
     padding: 20,
-    marginBottom: 30,
+    marginBottom: 20,
   },
-
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 14,
+    color: "#1e1e1e",
+  },
   infoItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -120,7 +323,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 14,
   },
-
   infoLabel: {
     fontSize: 13,
     color: "#777",
@@ -129,7 +331,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-
+  editEmailBox: {
+    marginBottom: 10,
+  },
+  input: {
+    borderWidth: 1.6,
+    borderColor: "#c9d5ff",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    fontSize: 15,
+    backgroundColor: "#f9faff",
+    marginBottom: 10,
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  smallBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smallBtnPrimary: {
+    backgroundColor: "#4a6bff",
+  },
+  smallBtnSecondary: {
+    backgroundColor: "#eef2ff",
+  },
+  smallBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  smallBtnTextSecondary: {
+    color: "#4a6bff",
+    fontWeight: "700",
+  },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -138,6 +377,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 30,
     borderRadius: 18,
+    marginTop: 10,
+    marginBottom: 30,
   },
   logoutText: {
     color: "#fff",

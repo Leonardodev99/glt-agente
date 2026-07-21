@@ -1,57 +1,62 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
+
+function formatarData(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("pt-AO");
+}
 
 export default function ConsultarMultas() {
   const [valor, setValor] = useState("");
   const [tipo, setTipo] = useState("bi"); // bi | matricula
   const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function consultarMultas() {
-    // 🔴 SIMULAÇÃO — depois liga à API
-    if (valor === "123456789LA" || valor === "LD-45-89-AA") {
-      setResultado({
-        nome: "Carlos Manuel Silva",
-        multas: [
-          {
-            id: 1,
-            infracao: "Excesso de velocidade",
-            data: "10/02/2025",
-            local: "Av. 4 de Fevereiro",
-            valor: 25000,
-            estado: "Não paga",
-          },
-          {
-            id: 2,
-            infracao: "Estacionamento indevido",
-            data: "18/01/2025",
-            local: "Mutamba",
-            valor: 15000,
-            estado: "Paga",
-          },
-        ],
-      });
-    } else {
-      setResultado("erro");
+  async function consultarMultas() {
+    setErro("");
+    setResultado(null);
+
+    if (!valor.trim()) {
+      setErro(
+        tipo === "bi" ? "Informe o BI do condutor." : "Informe a matrícula do veículo."
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const endpoint =
+        tipo === "bi" ? "/multas/buscar-por-condutor" : "/multas/buscar-por-veiculo";
+      const body = tipo === "bi" ? { bi: valor.trim() } : { matricula: valor.trim() };
+
+      const response = await api.post(endpoint, body);
+      setResultado(response.data);
+    } catch (err) {
+      setErro(err.response?.data?.error || "Nenhuma multa encontrada.");
+    } finally {
+      setLoading(false);
     }
   }
 
-  const totalValor =
-    resultado && resultado !== "erro"
-      ? resultado.multas.reduce((s, m) => s + m.valor, 0)
-      : 0;
+  const totalValor = resultado
+    ? resultado.multas.reduce((s, m) => s + m.valor, 0)
+    : 0;
 
-  const totalPendentes =
-    resultado && resultado !== "erro"
-      ? resultado.multas.filter((m) => m.estado !== "Paga").length
-      : 0;
+  const totalPendentes = resultado
+    ? resultado.multas.filter((m) => m.estado !== "Paga").length
+    : 0;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -67,22 +72,24 @@ export default function ConsultarMultas() {
       {/* SELETOR */}
       <View style={styles.switchBox}>
         <TouchableOpacity
-          style={[
-            styles.switchBtn,
-            tipo === "bi" && styles.switchActive,
-          ]}
-          onPress={() => setTipo("bi")}
+          style={[styles.switchBtn, tipo === "bi" && styles.switchActive]}
+          onPress={() => {
+            setTipo("bi");
+            setResultado(null);
+            setErro("");
+          }}
         >
           <MaterialIcons name="badge" size={20} color="#fff" />
           <Text style={styles.switchText}>Condutor (BI)</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[
-            styles.switchBtn,
-            tipo === "matricula" && styles.switchActive,
-          ]}
-          onPress={() => setTipo("matricula")}
+          style={[styles.switchBtn, tipo === "matricula" && styles.switchActive]}
+          onPress={() => {
+            setTipo("matricula");
+            setResultado(null);
+            setErro("");
+          }}
         >
           <MaterialIcons name="directions-car" size={20} color="#fff" />
           <Text style={styles.switchText}>Veículo</Text>
@@ -97,11 +104,7 @@ export default function ConsultarMultas() {
           color="#777"
         />
         <TextInput
-          placeholder={
-            tipo === "bi"
-              ? "Ex: 123456789LA"
-              : "Ex: LD-45-89-AA"
-          }
+          placeholder={tipo === "bi" ? "Ex: 123456789LA042" : "Ex: LD-45-89-AA"}
           value={valor}
           onChangeText={setValor}
           style={styles.input}
@@ -110,13 +113,19 @@ export default function ConsultarMultas() {
       </View>
 
       {/* BOTÃO */}
-      <TouchableOpacity style={styles.btn} onPress={consultarMultas}>
-        <MaterialIcons name="search" size={22} color="#fff" />
-        <Text style={styles.btnText}>Consultar Multas</Text>
+      <TouchableOpacity style={styles.btn} onPress={consultarMultas} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <MaterialIcons name="search" size={22} color="#fff" />
+            <Text style={styles.btnText}>Consultar Multas</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* RESULTADO */}
-      {resultado && resultado !== "erro" && (
+      {resultado && (
         <>
           {/* RESUMO */}
           <View style={styles.summaryBox}>
@@ -129,9 +138,7 @@ export default function ConsultarMultas() {
 
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total de Multas:</Text>
-              <Text style={styles.summaryValue}>
-                {resultado.multas.length}
-              </Text>
+              <Text style={styles.summaryValue}>{resultado.multas.length}</Text>
             </View>
 
             <View style={styles.summaryRow}>
@@ -150,56 +157,58 @@ export default function ConsultarMultas() {
           </View>
 
           {/* LISTA */}
-          <View style={styles.listBox}>
-            {resultado.multas.map((multa) => (
-              <View key={multa.id} style={styles.multaCard}>
-                <View style={styles.multaHeader}>
-                  <MaterialIcons
-                    name="report"
-                    size={20}
-                    color="#ff3b30"
-                  />
-                  <Text style={styles.multaTitle}>
-                    {multa.infracao}
-                  </Text>
-                </View>
+          {resultado.multas.length === 0 ? (
+            <View style={styles.errorBox}>
+              <MaterialIcons name="check-circle" size={24} color="#0a7d14" />
+              <Text style={[styles.errorText, { color: "#0a7d14" }]}>
+                Nenhuma multa registada.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.listBox}>
+              {resultado.multas.map((multa) => (
+                <View key={multa.id} style={styles.multaCard}>
+                  <View style={styles.multaHeader}>
+                    <MaterialIcons name="report" size={20} color="#ff3b30" />
+                    <Text style={styles.multaTitle}>{multa.categoria}</Text>
+                  </View>
 
-                <Text style={styles.multaText}>
-                  Data: <Text style={styles.bold}>{multa.data}</Text>
-                </Text>
-                <Text style={styles.multaText}>
-                  Local: <Text style={styles.bold}>{multa.local}</Text>
-                </Text>
-                <Text style={styles.multaText}>
-                  Valor:{" "}
-                  <Text style={styles.bold}>
-                    {multa.valor.toLocaleString()} Kz
+                  <Text style={styles.multaText}>
+                    Data: <Text style={styles.bold}>{formatarData(multa.data)}</Text>
                   </Text>
-                </Text>
+                  <Text style={styles.multaText}>
+                    Local: <Text style={styles.bold}>{multa.local || "—"}</Text>
+                  </Text>
+                  <Text style={styles.multaText}>
+                    Coima: <Text style={styles.bold}>{multa.coima_ucf} UCF</Text>
+                  </Text>
+                  <Text style={styles.multaText}>
+                    Valor:{" "}
+                    <Text style={styles.bold}>
+                      {multa.valor.toLocaleString()} Kz
+                    </Text>
+                  </Text>
 
-                <View
-                  style={[
-                    styles.statusBadge,
-                    multa.estado === "Paga"
-                      ? styles.paid
-                      : styles.unpaid,
-                  ]}
-                >
-                  <Text style={styles.statusText}>{multa.estado}</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      multa.estado === "Paga" ? styles.paid : styles.unpaid,
+                    ]}
+                  >
+                    <Text style={styles.statusText}>{multa.estado}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          )}
         </>
       )}
 
       {/* ERRO */}
-      {resultado === "erro" && (
+      {erro && (
         <View style={styles.errorBox}>
           <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
-          <Text style={styles.errorText}>
-            Nenhuma multa encontrada
-          </Text>
+          <Text style={styles.errorText}>{erro}</Text>
         </View>
       )}
     </ScrollView>
@@ -365,10 +374,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffeaea",
     padding: 14,
     borderRadius: 14,
+    marginBottom: 20,
   },
   errorText: {
     color: "#ff3b30",
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
 });

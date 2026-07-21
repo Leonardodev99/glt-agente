@@ -1,32 +1,78 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import api from "../services/api";
+import { abrirDocumentoExterno, buscarDocumento } from "../utils/documentUtils";
 
 export default function ConsultarBI() {
   const [bi, setBi] = useState("");
-  const [resultado, setResultado] = useState(null);
+  const [resultado, setResultado] = useState(null); // dados do condutor
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function consultarBI() {
-    // 🔴 SIMULAÇÃO — depois liga à API
-    if (bi === "123456789LA") {
-      setResultado({
-        nome: "Carlos Manuel Silva",
-        nascimento: "12/04/1994",
-        pai: "Manuel Silva",
-        mae: "Ana Maria",
-        biImagem: "https://via.placeholder.com/350x220.png?text=BI+do+Condutor",
-      });
-    } else {
-      setResultado("erro");
+  const [imagemBase64, setImagemBase64] = useState(null);
+  const [carregandoImagem, setCarregandoImagem] = useState(false);
+  const [documentoPdf, setDocumentoPdf] = useState(null); // { base64, contentType }
+
+  async function consultarBI() {
+    setErro("");
+    setResultado(null);
+    setImagemBase64(null);
+    setDocumentoPdf(null);
+
+    if (!bi.trim()) {
+      setErro("Informe o número do BI.");
+      return;
     }
+
+    setLoading(true);
+    try {
+      const response = await api.post("/condutores/buscar-por-bi", { bi: bi.trim() });
+      setResultado(response.data);
+
+      if (response.data.tem_file_bi) {
+        carregarImagemBI(bi.trim());
+      }
+    } catch (err) {
+      setErro(err.response?.data?.error || "BI não encontrado no sistema.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function carregarImagemBI(biConsultado) {
+    setCarregandoImagem(true);
+    try {
+      const { contentType, base64 } = await buscarDocumento(
+        "/condutores/consultar-bi",
+        { bi: biConsultado }
+      );
+
+      if (contentType.includes("pdf")) {
+        setDocumentoPdf({ base64, contentType });
+      } else {
+        setImagemBase64(`data:${contentType};base64,${base64}`);
+      }
+    } catch (err) {
+      // Falha ao carregar a imagem não deve travar a tela — os dados já apareceram
+      console.warn("Erro ao carregar imagem do BI:", err.message);
+    } finally {
+      setCarregandoImagem(false);
+    }
+  }
+
+  async function handleAbrirPdf() {
+    if (!documentoPdf) return;
+    await abrirDocumentoExterno(documentoPdf.base64, documentoPdf.contentType, "bi");
   }
 
   return (
@@ -44,7 +90,7 @@ export default function ConsultarBI() {
       <View style={styles.inputBox}>
         <MaterialIcons name="credit-card" size={22} color="#777" />
         <TextInput
-          placeholder="Ex: 123456789LA"
+          placeholder="Ex: 123456789LA042"
           value={bi}
           onChangeText={setBi}
           style={styles.input}
@@ -53,13 +99,19 @@ export default function ConsultarBI() {
       </View>
 
       {/* BOTÃO */}
-      <TouchableOpacity style={styles.btn} onPress={consultarBI}>
-        <MaterialIcons name="search" size={22} color="#fff" />
-        <Text style={styles.btnText}>Consultar BI</Text>
+      <TouchableOpacity style={styles.btn} onPress={consultarBI} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <>
+            <MaterialIcons name="search" size={22} color="#fff" />
+            <Text style={styles.btnText}>Consultar BI</Text>
+          </>
+        )}
       </TouchableOpacity>
 
       {/* RESULTADO */}
-      {resultado && resultado !== "erro" && (
+      {resultado && (
         <View style={styles.resultBox}>
           <Text style={styles.resultTitle}>Dados do Condutor</Text>
 
@@ -67,36 +119,59 @@ export default function ConsultarBI() {
             Nome: <Text style={styles.value}>{resultado.nome}</Text>
           </Text>
           <Text style={styles.label}>
-            Data de Nascimento:{" "}
-            <Text style={styles.value}>{resultado.nascimento}</Text>
+            BI: <Text style={styles.value}>{resultado.bi}</Text>
           </Text>
           <Text style={styles.label}>
-            Pai: <Text style={styles.value}>{resultado.pai}</Text>
+            Telefone: <Text style={styles.value}>{resultado.telefone}</Text>
           </Text>
           <Text style={styles.label}>
-            Mãe: <Text style={styles.value}>{resultado.mae}</Text>
+            E-mail: <Text style={styles.value}>{resultado.email}</Text>
+          </Text>
+          <Text style={styles.label}>
+            Nº da Carta: <Text style={styles.value}>{resultado.num_carta}</Text>
           </Text>
 
-          {/* IMAGEM OU PDF */}
-          <Image
-            source={{ uri: resultado.biImagem }}
-            style={styles.biImage}
-            resizeMode="contain"
-          />
+          {/* IMAGEM */}
+          {carregandoImagem && (
+            <View style={styles.previewLoading}>
+              <ActivityIndicator color="#4a6bff" />
+              <Text style={styles.previewText}>Carregando imagem...</Text>
+            </View>
+          )}
 
-          <Text style={styles.previewText}>
-            Visualização do Bilhete de Identidade
-          </Text>
+          {imagemBase64 && (
+            <>
+              <Image
+                source={{ uri: imagemBase64 }}
+                style={styles.biImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.previewText}>
+                Visualização do Bilhete de Identidade
+              </Text>
+            </>
+          )}
+
+          {documentoPdf && (
+            <TouchableOpacity style={styles.pdfBtn} onPress={handleAbrirPdf}>
+              <MaterialIcons name="picture-as-pdf" size={20} color="#4a6bff" />
+              <Text style={styles.pdfBtnText}>Abrir arquivo do BI</Text>
+            </TouchableOpacity>
+          )}
+
+          {!resultado.tem_file_bi && (
+            <Text style={styles.previewText}>
+              Nenhum arquivo de BI cadastrado para este condutor.
+            </Text>
+          )}
         </View>
       )}
 
       {/* ERRO */}
-      {resultado === "erro" && (
+      {erro && (
         <View style={styles.errorBox}>
           <MaterialIcons name="error-outline" size={24} color="#ff3b30" />
-          <Text style={styles.errorText}>
-            BI não encontrado no sistema
-          </Text>
+          <Text style={styles.errorText}>{erro}</Text>
         </View>
       )}
     </ScrollView>
@@ -163,6 +238,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 18,
     elevation: 2,
+    marginBottom: 20,
   },
   resultTitle: {
     fontSize: 18,
@@ -192,6 +268,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#777",
   },
+  previewLoading: {
+    alignItems: "center",
+    marginTop: 16,
+  },
+
+  pdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eef2ff",
+    padding: 14,
+    borderRadius: 14,
+    marginTop: 16,
+  },
+  pdfBtnText: {
+    color: "#4a6bff",
+    fontWeight: "700",
+    marginLeft: 8,
+  },
 
   errorBox: {
     flexDirection: "row",
@@ -199,10 +294,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffeaea",
     padding: 14,
     borderRadius: 14,
+    marginBottom: 20,
   },
   errorText: {
     color: "#ff3b30",
     fontWeight: "600",
     marginLeft: 8,
+    flex: 1,
   },
 });
