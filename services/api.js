@@ -3,7 +3,7 @@ import axios from "axios";
 
 // ⚠️ Troque pelo IP local do seu PC na rede Wi-Fi (ex: 192.168.1.50)
 // Descubra com `hostname -I` (Linux/WSL) ou `ipconfig` (Windows, campo IPv4)
-const API_URL = "http://10.52.196.172:3001";
+const API_URL = "http://10.187.226.172:3001";
 
 const api = axios.create({
   baseURL: API_URL,

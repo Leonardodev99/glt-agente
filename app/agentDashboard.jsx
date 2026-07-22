@@ -7,11 +7,13 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { BarChart } from "react-native-chart-kit";
+import useLocationTracking from "../hooks/useLocationTracking";
 import api from "../services/api";
 
 const screenWidth = Dimensions.get("window").width - 40;
@@ -45,6 +47,22 @@ export default function AgentDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [erro, setErro] = useState("");
+
+  const {
+    ativo: localizacaoAtiva,
+    erro: erroLocalizacao,
+    ultimaAtualizacao,
+    iniciar: iniciarLocalizacao,
+    parar: pararLocalizacao,
+  } = useLocationTracking();
+
+  async function handleToggleLocalizacao(valor) {
+    if (valor) {
+      await iniciarLocalizacao();
+    } else {
+      pararLocalizacao();
+    }
+  }
 
   async function carregarDados() {
     setErro("");
@@ -126,6 +144,45 @@ export default function AgentDashboard() {
         </View>
 
         {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
+
+        {/* PARTILHA DE LOCALIZAÇÃO */}
+        <View style={styles.localizacaoCard}>
+          <View style={styles.localizacaoRow}>
+            <View style={styles.localizacaoLeft}>
+              <MaterialIcons
+                name="my-location"
+                size={26}
+                color={localizacaoAtiva ? "#0a7d14" : "#999"}
+              />
+              <View style={{ marginLeft: 12 }}>
+                <Text style={styles.localizacaoTitulo}>
+                  Partilhar localização
+                </Text>
+                <Text style={styles.localizacaoStatus}>
+                  {localizacaoAtiva
+                    ? ultimaAtualizacao
+                      ? `Ativo · última atualização ${ultimaAtualizacao.toLocaleTimeString(
+                          "pt-AO"
+                        )}`
+                      : "Ativo · aguardando primeira posição..."
+                    : "Desativado"}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={localizacaoAtiva}
+              onValueChange={handleToggleLocalizacao}
+              trackColor={{ false: "#ccc", true: "#a5d6a7" }}
+              thumbColor={localizacaoAtiva ? "#0a7d14" : "#f4f3f4"}
+            />
+          </View>
+          {erroLocalizacao ? (
+            <Text style={styles.localizacaoErro}>{erroLocalizacao}</Text>
+          ) : null}
+          <Text style={styles.localizacaoAviso}>
+            Funciona apenas com o app aberto. Ao minimizar, o envio pausa.
+          </Text>
+        </View>
 
         {/* RESUMO */}
         <View style={styles.section}>
@@ -311,6 +368,43 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 12,
     textAlign: "center",
+  },
+
+  localizacaoCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 20,
+  },
+  localizacaoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  localizacaoLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  localizacaoTitulo: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  localizacaoStatus: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 2,
+  },
+  localizacaoErro: {
+    color: "#ff3b30",
+    fontSize: 12,
+    marginTop: 8,
+  },
+  localizacaoAviso: {
+    color: "#aaa",
+    fontSize: 11,
+    marginTop: 8,
+    fontStyle: "italic",
   },
 
   section: { marginBottom: 30 },

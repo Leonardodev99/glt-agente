@@ -1,22 +1,27 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-    Animated,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-    useColorScheme,
+  ActivityIndicator,
+  Animated,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useColorScheme,
 } from "react-native";
+import api from "../services/api";
 
 export default function NewPassword() {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
+  const { email, codigo } = useLocalSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
 
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -42,6 +47,31 @@ export default function NewPassword() {
       }),
     ]).start();
   }, []);
+
+  async function handleSalvar() {
+    setErro("");
+
+    if (!email || !codigo) {
+      setErro("Sessão de redefinição inválida. Reinicie o processo.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.post("/password/reset-codigo", {
+        email,
+        codigo,
+        novaSenha: password,
+      });
+      router.replace("/login");
+    } catch (err) {
+      setErro(
+        err.response?.data?.error || "Erro ao redefinir a senha. Tente novamente."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -134,16 +164,22 @@ export default function NewPassword() {
           </TouchableOpacity>
         </View>
 
+        {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
+
         {/* BOTÃO SALVAR */}
         <TouchableOpacity
           style={[
             styles.btn,
-            !(passwordValid && confirmValid) && styles.btnDisabled,
+            (!(passwordValid && confirmValid) || loading) && styles.btnDisabled,
           ]}
-          disabled={!(passwordValid && confirmValid)}
-          onPress={() => router.replace("/login")}
+          disabled={!(passwordValid && confirmValid) || loading}
+          onPress={handleSalvar}
         >
-          <Text style={styles.btnText}>Salvar nova senha</Text>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>Salvar nova senha</Text>
+          )}
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -231,6 +267,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: "#222",
+  },
+
+  erroText: {
+    color: "#ff3b30",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
   },
 
   btn: {

@@ -19,6 +19,15 @@ import api from "../services/api";
 
 const TIPOS_OCORRENCIA = ["Multa", "Acidente", "Apreensão", "Outras"];
 const CATEGORIAS_MULTA = ["Leve", "Leve-Média", "Grave", "Muito Grave", "Gravíssima"];
+
+// Só para exibição — a fonte da verdade é o backend (Tabela 1 - MultaController)
+const FAIXA_POR_CATEGORIA = {
+  Leve: "530 - 2.640 Kz",
+  "Leve-Média": "2.640 - 13.200 Kz",
+  Grave: "5.280 - 26.400 Kz",
+  "Muito Grave": "21.120 - 105.600 Kz",
+  Gravíssima: "Acima de 105.600 Kz",
+};
 const METODOS_PAGAMENTO = [
   { label: "Multicaixa", value: "multicaixa" },
   { label: "Dinheiro", value: "dinheiro" },
@@ -53,8 +62,6 @@ export default function NovaOcorrencia() {
 
   // Campos extras só para Multa
   const [categoria, setCategoria] = useState("");
-  const [coimaUcf, setCoimaUcf] = useState("");
-  const [faixaKz, setFaixaKz] = useState("");
   const [valorKz, setValorKz] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState("multicaixa");
 
@@ -309,8 +316,6 @@ export default function NovaOcorrencia() {
     setMatricula("");
     setVeiculo(null);
     setCategoria("");
-    setCoimaUcf("");
-    setFaixaKz("");
     setValorKz("");
     setMetodoPagamento("multicaixa");
   }
@@ -331,8 +336,8 @@ export default function NovaOcorrencia() {
 
     const ehMulta = tipo === "Multa";
 
-    if (ehMulta && (!categoria || !coimaUcf || !faixaKz || !valorKz)) {
-      Alert.alert("Erro", "Preencha todos os dados da multa (categoria, coima, faixa e valor).");
+    if (ehMulta && (!categoria || !valorKz)) {
+      Alert.alert("Erro", "Preencha a categoria e o valor da multa.");
       return;
     }
 
@@ -362,8 +367,6 @@ export default function NovaOcorrencia() {
         try {
           const resMulta = await api.post("/multas", {
             categoria,
-            coima_ucf: coimaUcf,
-            faixa_kz: faixaKz,
             valor_kz: valorKz,
             id_ocorrencia: ocorrenciaCriada.id_ocorrencia,
           });
@@ -543,20 +546,11 @@ export default function NovaOcorrencia() {
             options={CATEGORIAS_MULTA}
           />
 
-          <Input
-            icon="numbers"
-            placeholder="Coima (UCF)"
-            value={coimaUcf}
-            onChange={setCoimaUcf}
-            keyboard="numeric"
-          />
-
-          <Input
-            icon="linear-scale"
-            placeholder="Faixa (Kz) — ex: 20000-50000"
-            value={faixaKz}
-            onChange={setFaixaKz}
-          />
+          {categoria ? (
+            <Text style={styles.faixaHint}>
+              Faixa de referência: {FAIXA_POR_CATEGORIA[categoria]}
+            </Text>
+          ) : null}
 
           <Input
             icon="payments"
@@ -746,6 +740,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: -8,
     marginBottom: 12,
+    marginLeft: 4,
+  },
+  faixaHint: {
+    color: "#ff9800",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: -8,
+    marginBottom: 14,
     marginLeft: 4,
   },
   btn: {

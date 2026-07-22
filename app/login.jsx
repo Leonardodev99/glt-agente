@@ -179,7 +179,7 @@ export default function Login() {
         {/* ESQUECI A SENHA */}
         <TouchableOpacity
           style={styles.forgotBtn}
-          onPress={() => router.push("/passwordReset")}
+          onPress={() => router.push("/esqueciSenha")}
         >
           <Text style={[styles.forgotText, isDark && styles.textDark]}>
             Esqueci minha senha

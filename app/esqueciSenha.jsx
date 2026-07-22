@@ -1,29 +1,27 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Animated,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  useColorScheme,
+    ActivityIndicator,
+    Animated,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useColorScheme,
 } from "react-native";
 import api from "../services/api";
 
-export default function PasswordReset() {
+export default function EsqueciSenha() {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
-  const { email } = useLocalSearchParams();
 
-  const [codigo, setCodigo] = useState("");
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
-  const [reenviando, setReenviando] = useState(false);
-  const [mensagem, setMensagem] = useState("");
 
-  const codigoValido = /^\d{6}$/.test(codigo);
+  const emailValido = /\S+@\S+\.\S+/.test(email);
 
   const slideAnim = useRef(new Animated.Value(40)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -43,38 +41,16 @@ export default function PasswordReset() {
     ]).start();
   }, []);
 
-  function handleContinuar() {
+  async function handleSolicitar() {
     setErro("");
-
-    if (!email) {
-      setErro("E-mail não identificado. Volte ao início do processo.");
-      return;
-    }
-    if (!codigoValido) {
-      setErro("Informe o código de 6 dígitos recebido por e-mail.");
-      return;
-    }
-
-    router.push({
-      pathname: "/newPassword",
-      params: { email, codigo },
-    });
-  }
-
-  async function handleReenviar() {
-    if (!email) {
-      setMensagem("E-mail não identificado.");
-      return;
-    }
-    setMensagem("");
-    setReenviando(true);
+    setLoading(true);
     try {
-      await api.post("/password/forgot", { email });
-      setMensagem("Novo código enviado!");
+      await api.post("/password/forgot", { email: email.trim() });
+      router.push({ pathname: "/codeSent", params: { email: email.trim() } });
     } catch (err) {
-      setMensagem(err.response?.data?.error || "Erro ao reenviar código.");
+      setErro(err.response?.data?.error || "Erro ao solicitar redefinição.");
     } finally {
-      setReenviando(false);
+      setLoading(false);
     }
   }
 
@@ -91,67 +67,57 @@ export default function PasswordReset() {
         ]}
       >
         <MaterialIcons
-          name="pin"
+          name="mark-email-unread"
           size={72}
           color={isDark ? "#9eb4ff" : "#4a6bff"}
           style={{ alignSelf: "center", marginBottom: 10 }}
         />
 
         <Text style={[styles.title, isDark && styles.titleDark]}>
-          Digite o código
+          Recuperar senha
         </Text>
 
         <Text style={[styles.subtitle, isDark && styles.textDark]}>
-          Insira o código de 6 dígitos enviado para {email || "o seu e-mail"}.
+          Insira o e-mail associado à sua conta. Vamos enviar um código de
+          verificação.
         </Text>
 
         <View
           style={[
             styles.inputWrapper,
-            codigo.length > 0 && !codigoValido && styles.inputError,
-            codigoValido && styles.inputSuccess,
+            email.length > 0 && !emailValido && styles.inputError,
+            emailValido && styles.inputSuccess,
             isDark && styles.inputDark,
           ]}
         >
           <MaterialIcons
-            name="pin"
+            name="email"
             size={22}
-            color={codigoValido ? "#0a7d14" : "#777"}
+            color={emailValido ? "#0a7d14" : "#777"}
             style={styles.icon}
           />
           <TextInput
-            placeholder="000000"
+            placeholder="E-mail"
             placeholderTextColor={isDark ? "#aaa" : "#777"}
-            style={[styles.input, styles.codigoInput, isDark && styles.textDark]}
-            value={codigo}
-            onChangeText={(v) => setCodigo(v.replace(/\D/g, "").slice(0, 6))}
-            keyboardType="number-pad"
-            maxLength={6}
+            style={[styles.input, isDark && styles.textDark]}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
         </View>
 
         {erro ? <Text style={styles.erroText}>{erro}</Text> : null}
-        {mensagem ? <Text style={styles.mensagemText}>{mensagem}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.btn, !codigoValido && styles.btnDisabled]}
-          disabled={!codigoValido}
-          onPress={handleContinuar}
+          style={[styles.btn, (!emailValido || loading) && styles.btnDisabled]}
+          disabled={!emailValido || loading}
+          onPress={handleSolicitar}
         >
-          <Text style={styles.btnText}>Continuar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondBtn}
-          onPress={handleReenviar}
-          disabled={reenviando}
-        >
-          {reenviando ? (
-            <ActivityIndicator color={isDark ? "#9eb4ff" : "#4a6bff"} />
+          {loading ? (
+            <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={[styles.secondText, isDark && styles.secondTextDark]}>
-              Reenviar código
-            </Text>
+            <Text style={styles.btnText}>Enviar código</Text>
           )}
         </TouchableOpacity>
 
@@ -211,7 +177,6 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#f3f5ff",
     borderWidth: 1.6,
     borderColor: "#c9d5ff",
@@ -240,21 +205,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#222",
   },
-  codigoInput: {
-    fontSize: 24,
-    letterSpacing: 8,
-    textAlign: "center",
-    fontWeight: "700",
-  },
   erroText: {
     color: "#ff3b30",
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  mensagemText: {
-    color: "#0a7d14",
     fontSize: 13,
     fontWeight: "600",
     marginBottom: 12,
@@ -274,20 +226,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "700",
-  },
-  secondBtn: {
-    marginBottom: 10,
-    minHeight: 24,
-    justifyContent: "center",
-  },
-  secondText: {
-    fontSize: 16,
-    color: "#4a6bff",
-    textAlign: "center",
-    fontWeight: "600",
-  },
-  secondTextDark: {
-    color: "#9eb4ff",
   },
   backText: {
     fontSize: 14,

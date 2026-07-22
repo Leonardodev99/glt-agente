@@ -1,20 +1,25 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useEffect, useRef } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
-    Animated,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-    useColorScheme,
+  ActivityIndicator,
+  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useColorScheme,
 } from "react-native";
+import api from "../services/api";
 
 export default function CodeSent() {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
+  const { email } = useLocalSearchParams();
 
-  // ANIMAÇÃO
+  const [reenviando, setReenviando] = useState(false);
+  const [mensagem, setMensagem] = useState("");
+
   const slideAnim = useRef(new Animated.Value(40)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -33,6 +38,23 @@ export default function CodeSent() {
     ]).start();
   }, []);
 
+  async function handleReenviar() {
+    if (!email) {
+      setMensagem("E-mail não identificado. Volte e tente novamente.");
+      return;
+    }
+    setMensagem("");
+    setReenviando(true);
+    try {
+      await api.post("/password/forgot", { email });
+      setMensagem("Novo código enviado!");
+    } catch (err) {
+      setMensagem(err.response?.data?.error || "Erro ao reenviar código.");
+    } finally {
+      setReenviando(false);
+    }
+  }
+
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
       <Animated.View
@@ -45,36 +67,45 @@ export default function CodeSent() {
           },
         ]}
       >
-
         <MaterialIcons
           name="mark-email-read"
           size={78}
           color={isDark ? "#9eb4ff" : "#4a6bff"}
           style={{ alignSelf: "center", marginBottom: 15 }}
         />
-
         <Text style={[styles.title, isDark && styles.titleDark]}>
           Código Enviado!
         </Text>
-
         <Text style={[styles.text, isDark && styles.textDark]}>
-          Enviamos um código de verificação para o seu e-mail.  
+          Enviamos um código de verificação para {email || "o seu e-mail"}.
           Digite o código na próxima tela para redefinir sua senha.
         </Text>
+
+        {mensagem ? <Text style={styles.mensagemText}>{mensagem}</Text> : null}
 
         {/* Botão: Continuar */}
         <TouchableOpacity
           style={styles.btn}
-          onPress={() => router.push("/passwordReset")}
+          onPress={() =>
+            router.push({ pathname: "/passwordReset", params: { email } })
+          }
         >
           <Text style={styles.btnText}>Continuar</Text>
         </TouchableOpacity>
 
         {/* Reenviar código */}
-        <TouchableOpacity style={styles.secondBtn}>
-          <Text style={[styles.secondText, isDark && styles.secondTextDark]}>
-            Reenviar código
-          </Text>
+        <TouchableOpacity
+          style={styles.secondBtn}
+          onPress={handleReenviar}
+          disabled={reenviando}
+        >
+          {reenviando ? (
+            <ActivityIndicator color={isDark ? "#9eb4ff" : "#4a6bff"} />
+          ) : (
+            <Text style={[styles.secondText, isDark && styles.secondTextDark]}>
+              Reenviar código
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Voltar ao Login */}
@@ -88,7 +119,6 @@ export default function CodeSent() {
   );
 }
 
-// ESTILOS MATERIAL YOU
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -100,7 +130,6 @@ const styles = StyleSheet.create({
   containerDark: {
     backgroundColor: "#0c0f14",
   },
-
   box: {
     width: "100%",
     backgroundColor: "#ffffff",
@@ -114,7 +143,6 @@ const styles = StyleSheet.create({
   boxDark: {
     backgroundColor: "#161b22",
   },
-
   title: {
     fontSize: 30,
     fontWeight: "700",
@@ -125,17 +153,22 @@ const styles = StyleSheet.create({
   titleDark: {
     color: "#fff",
   },
-
   text: {
     fontSize: 16,
     color: "#444",
     textAlign: "center",
-    marginBottom: 25,
+    marginBottom: 15,
   },
   textDark: {
     color: "#ccc",
   },
-
+  mensagemText: {
+    fontSize: 13,
+    color: "#0a7d14",
+    textAlign: "center",
+    marginBottom: 15,
+    fontWeight: "600",
+  },
   btn: {
     backgroundColor: "#4a6bff",
     paddingVertical: 14,
@@ -148,9 +181,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
   },
-
   secondBtn: {
     marginBottom: 10,
+    minHeight: 24,
+    justifyContent: "center",
   },
   secondText: {
     fontSize: 16,
@@ -161,7 +195,6 @@ const styles = StyleSheet.create({
   secondTextDark: {
     color: "#9eb4ff",
   },
-
   backText: {
     fontSize: 14,
     textAlign: "center",
